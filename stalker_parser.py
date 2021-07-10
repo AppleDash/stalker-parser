@@ -55,20 +55,23 @@ class StalkerConfigParser:
     def __init__(self, warning_mode=WarningMode.WARN, auto_coerce_values=False):
         self.warning_mode = warning_mode
         self.auto_coerce_values = auto_coerce_values
-        self._sections = OrderedDict()
         self.unresolved_inheritances = defaultdict(list)
+
+        self._sections = OrderedDict()
 
     # INPUT : iterable of lines in the config file
     # OUTPUT: dict of configuration section names to values
     def parse(self, lines):
         current_section = None
 
-        for line in lines:
+        for index, line in enumerate(map(str.strip, lines)):
             if (not line) or (line[0] == self.COMMENT_CHAR):
                 continue
-    
+
+            line_number = index + 1
+
             if line[0] == '[':
-                section_name, section_inheritance = self._parse_section_header(line)
+                section_name, section_inheritance = self._parse_section_header(line, line_number)
                 if section_name not in self._sections:
                     self._sections[section_name] = StalkerConfigSection(section_name)
 
@@ -76,7 +79,7 @@ class StalkerConfigParser:
                 self.unresolved_inheritances[section_name].extend(section_inheritance)
             else:
                 if not current_section:
-                    raise ParseError('key/value pair encountered before first section')
+                    raise ParseError('key/value pair encountered before first section (line {}, near "{}")'.format(line_number, line))
 
                 key, val = self._parse_key_value(line)
 
@@ -143,7 +146,7 @@ class StalkerConfigParser:
     # OUTPUT: tuple of (section name, [list of inherited sections])
     # RAISES: ParseError if we run out of data before we finish parsing the section name
     # NOTES : it is assumed that line at the very least starts with [
-    def _parse_section_header(self, line):
+    def _parse_section_header(self, line, line_number):
         S_NAME = 0  # parsing the name of the section
         S_NEXT = 1  # done parsing name, expecting inheritance or some such
         S_INHE = 2  # parsing inheritance
@@ -151,7 +154,7 @@ class StalkerConfigParser:
         state = S_NAME
         name = ''
         inheritance = ''
-    
+
         for c in line[1:]:
             if state == S_NAME:
                 if c == ']':  # End of section header
@@ -170,7 +173,7 @@ class StalkerConfigParser:
                 inheritance += c
 
         if state == S_NAME:  # we never finished parsing the name
-            raise ParseError('end of line when parsing section header name')
+            raise ParseError('end of line when parsing section header name (line {}, near \"{}\")'.format(line_number, line[1:]))
 
         return name, [x for x in inheritance.strip().split(',') if x]
 
@@ -221,7 +224,7 @@ class StalkerConfigParser:
 if __name__ == '__main__':
     parser = StalkerConfigParser()
 
-    with codecs.open('/home/appledash/Desktop/m_poltergeist.ltx', 'r', encoding='cp1251') as fp:
+    with codecs.open('/home/appledash/Desktop/w_m4_up.ltx', 'r', encoding='utf-8') as fp:
         parser.parse(line.strip() for line in fp)
 
-    pprint.pprint(parser.sections)
+    pprint.pprint(dict(parser._sections))
