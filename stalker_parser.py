@@ -22,6 +22,9 @@ class StalkerConfigSection:
         self.name = name
         self.data = OrderedDict()
 
+    def get(self, key, default=None):
+        return self.data.get(key, default)
+
     def items(self):
         return self.data.items()
 
@@ -40,15 +43,19 @@ class StalkerConfigSection:
     def __str__(self):
         return repr(self)
 
+    def __iter__(self):
+        return iter(self.data)
+
 
 class StalkerConfigParser:
     COMMENT_CHAR = ';'
     RE_SINGLE_FLOAT = re.compile(r'^[\-0-9.]+$')
     RE_LIST_OF_FLOATS = re.compile(r'^([\-0-9.]+\s*,?\s*)+$')
 
-    def __init__(self, warning_mode=WarningMode.WARN):
+    def __init__(self, warning_mode=WarningMode.WARN, auto_coerce_values=False):
         self.warning_mode = warning_mode
-        self.sections = OrderedDict()
+        self.auto_coerce_values = auto_coerce_values
+        self._sections = OrderedDict()
         self.unresolved_inheritances = defaultdict(list)
 
     # INPUT : iterable of lines in the config file
@@ -62,10 +69,10 @@ class StalkerConfigParser:
     
             if line[0] == '[':
                 section_name, section_inheritance = self._parse_section_header(line)
-                if section_name not in self.sections:
-                    self.sections[section_name] = StalkerConfigSection(section_name)
+                if section_name not in self._sections:
+                    self._sections[section_name] = StalkerConfigSection(section_name)
 
-                current_section = self.sections[section_name]
+                current_section = self._sections[section_name]
                 self.unresolved_inheritances[section_name].extend(section_inheritance)
             else:
                 if not current_section:
@@ -80,15 +87,54 @@ class StalkerConfigParser:
 
         self._merge_inheritance()
 
+    # these methods are designed to behave exactly like Python's built in configparser
+
+    def sections(self):
+        return self._sections.keys()
+
+    def has_option(self, section, option):
+        return (section in self._sections) and (option in self._sections[section])
+
+    def get(self, section, option, fallback=None):
+        if section not in self._sections:
+            return fallback
+
+        return self._sections[section].get(option, fallback)
+
+    def getint(self, section, option, fallback=None):
+        return self._generic_get(section, option, fallback, int)
+
+    def getfloat(self, section, option, fallback=None):
+        return self._generic_get(section, option, fallback, float)
+
+    def getboolean(self, section, option, fallback=None):
+        return self._generic_get(section, option, fallback, self._parse_ini_boolean)
+
+    def _generic_get(self, section, option, fallback, coercer):
+        value = self.get(section, option, None)
+
+        if not value:
+            return fallback
+
+        return coercer(value.strip())
+
+    def _parse_ini_boolean(self, val):
+        if val.lower() in {'1', 'yes', 'true', 'on'}:
+            return True
+        elif val.lower() in {'0', 'no', 'false', 'off'}:
+            return False
+
+        raise ValueError('bad boolean value ' + val)
+
     def _merge_inheritance(self):
         for child, parents in self.unresolved_inheritances.items():
             for parent in parents:
-                if parent not in self.sections:
+                if parent not in self._sections:
                     continue
 
-                for key, val in self.sections[parent].items():
-                    if key not in self.sections[child]:
-                        self.sections[child][key] = val
+                for key, val in self._sections[parent].items():
+                    if key not in self._sections[child]:
+                        self._sections[child][key] = val
 
                 # it is now resolved
                 self.unresolved_inheritances[child].remove(parent)
@@ -146,8 +192,13 @@ class StalkerConfigParser:
                     key += c
             else:
                 val += c
+
+        val = val.strip()
+
+        if self.auto_coerce_values:
+            val = self._parse_value(val)
     
-        return key.strip(), self._parse_value(val.strip())
+        return key.strip(), val
 
     # INPUT  : string containing an alleged value from a key/value pair
     # OUTPUT : parsed value, such as a string, float, list of floats, or something else
