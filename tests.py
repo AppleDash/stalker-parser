@@ -44,7 +44,13 @@ class TestStalkerConfigParser(unittest.TestCase):
 
     def test_configparser_compat(self):
         self.assertEqual({'foo', 'bar', 'baz', 'quux', 'and now for something completely different', 'this will come later'}, set(self._parser.sections()))
+
+        self.assertTrue(self._parser.has_option('foo', 'int'))
+        self.assertFalse(self._parser.has_option('foo', 'does not exist!'))
+
         self.assertEqual('hello there fine sir', self._parser.get('foo', 'string'))
         self.assertEqual(1, self._parser.getint('foo', 'int'))
         self.assertEqual(2.0, self._parser.getfloat('foo', 'float'))
+        self.assertTrue(self._parser.getboolean('foo', 'bool'))
         self.assertEqual(69, self._parser.getint('foo', 'does not exist!', fallback=69))
+
